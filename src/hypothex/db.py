@@ -166,6 +166,81 @@ class Database:
             rows = await cursor.fetchall()
             return [dict(row) for row in rows]
 
+    async def create_hypothesis(self, session_id: str, description: str) -> dict:
+        if self._write_conn is None:
+            raise RuntimeError("Database not connected")
+        # Get next hypothesis number for this session using MAX
+        async with self._write_conn.execute(
+            """\
+            SELECT MAX(CAST(SUBSTR(id, INSTR(id, ':h') + 2) AS INTEGER))
+            FROM hypotheses WHERE session_id = ?""",
+            (session_id,),
+        ) as cursor:
+            row = await cursor.fetchone()
+            next_n = (row[0] or 0) + 1
+        hyp_id = f"{session_id}:h{next_n}"
+        await self._write_conn.execute(
+            """\
+            INSERT INTO hypotheses (id, session_id, description)
+            VALUES (?, ?, ?)""",
+            (hyp_id, session_id, description),
+        )
+        await self._write_conn.commit()
+        async with self._write_conn.execute(
+            "SELECT * FROM hypotheses WHERE id = ?", (hyp_id,)
+        ) as cursor:
+            row = await cursor.fetchone()
+            return {
+                "id": row[0],
+                "session_id": row[1],
+                "description": row[2],
+                "status": row[3],
+                "created_at": row[4],
+            }
+
+    async def list_hypotheses(self, session_id: str) -> list[dict]:
+        if self._read_conn is None:
+            raise RuntimeError("Database not connected")
+        async with self._read_conn.execute(
+            """\
+            SELECT h.id, h.description, h.status, h.created_at,
+                   COUNT(lh.log_id) as log_count
+            FROM hypotheses h
+            LEFT JOIN log_hypotheses lh ON h.id = lh.hypothesis_id
+            WHERE h.session_id = ?
+            GROUP BY h.id
+            ORDER BY h.created_at ASC""",
+            (session_id,),
+        ) as cursor:
+            rows = await cursor.fetchall()
+            return [dict(row) for row in rows]
+
+    async def update_hypothesis(self, hypothesis_id: str, status: str) -> dict:
+        if self._write_conn is None:
+            raise RuntimeError("Database not connected")
+        if status not in ("confirmed", "rejected"):
+            raise ValueError("status must be 'confirmed' or 'rejected'")
+        await self._write_conn.execute(
+            "UPDATE hypotheses SET status = ? WHERE id = ?",
+            (status, hypothesis_id),
+        )
+        await self._write_conn.commit()
+        # Read back from write_conn (avoids WAL visibility race with read_conn)
+        async with self._write_conn.execute(
+            "SELECT * FROM hypotheses WHERE id = ?",
+            (hypothesis_id,),
+        ) as cursor:
+            row = await cursor.fetchone()
+            if row is None:
+                raise ValueError(f"Hypothesis '{hypothesis_id}' not found")
+            return {
+                "id": row[0],
+                "session_id": row[1],
+                "description": row[2],
+                "status": row[3],
+                "created_at": row[4],
+            }
+
     async def clear_session(self, session_id: str) -> int:
         if self._write_conn is None:
             raise RuntimeError("Database not connected")

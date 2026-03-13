@@ -172,3 +172,74 @@ async def test_foreign_keys_enabled(db: Database):
     async with db._read_conn.execute("PRAGMA foreign_keys") as cursor:
         row = await cursor.fetchone()
     assert row[0] == 1
+
+
+@pytest.mark.asyncio
+async def test_create_hypothesis(db: Database):
+    h = await db.create_hypothesis("s1", "Cache is stale after update")
+    assert h["id"] == "s1:h1"
+    assert h["session_id"] == "s1"
+    assert h["description"] == "Cache is stale after update"
+    assert h["status"] == "pending"
+    assert "created_at" in h
+
+
+@pytest.mark.asyncio
+async def test_create_hypothesis_auto_increments(db: Database):
+    h1 = await db.create_hypothesis("s1", "First hypothesis")
+    h2 = await db.create_hypothesis("s1", "Second hypothesis")
+    assert h1["id"] == "s1:h1"
+    assert h2["id"] == "s1:h2"
+
+
+@pytest.mark.asyncio
+async def test_create_hypothesis_scoped_to_session(db: Database):
+    h1 = await db.create_hypothesis("s1", "Hypothesis for s1")
+    h2 = await db.create_hypothesis("s2", "Hypothesis for s2")
+    assert h1["id"] == "s1:h1"
+    assert h2["id"] == "s2:h1"
+
+
+@pytest.mark.asyncio
+async def test_list_hypotheses(db: Database):
+    await db.create_hypothesis("s1", "First")
+    await db.create_hypothesis("s1", "Second")
+    await db.create_hypothesis("s2", "Other session")
+    result = await db.list_hypotheses("s1")
+    assert len(result) == 2
+    assert result[0]["id"] == "s1:h1"
+    assert result[1]["id"] == "s1:h2"
+    assert result[0]["log_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_list_hypotheses_empty(db: Database):
+    result = await db.list_hypotheses("nonexistent")
+    assert result == []
+
+
+@pytest.mark.asyncio
+async def test_update_hypothesis(db: Database):
+    await db.create_hypothesis("s1", "Test hypothesis")
+    h = await db.update_hypothesis("s1:h1", "confirmed")
+    assert h["status"] == "confirmed"
+
+
+@pytest.mark.asyncio
+async def test_update_hypothesis_rejected(db: Database):
+    await db.create_hypothesis("s1", "Test hypothesis")
+    h = await db.update_hypothesis("s1:h1", "rejected")
+    assert h["status"] == "rejected"
+
+
+@pytest.mark.asyncio
+async def test_update_hypothesis_invalid_status(db: Database):
+    await db.create_hypothesis("s1", "Test hypothesis")
+    with pytest.raises(ValueError, match="must be 'confirmed' or 'rejected'"):
+        await db.update_hypothesis("s1:h1", "maybe")
+
+
+@pytest.mark.asyncio
+async def test_update_hypothesis_nonexistent(db: Database):
+    with pytest.raises(ValueError, match="not found"):
+        await db.update_hypothesis("s1:h999", "confirmed")
