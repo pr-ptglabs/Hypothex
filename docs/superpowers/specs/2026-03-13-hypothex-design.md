@@ -21,7 +21,9 @@ Claude Code <-- stdio --> MCP Server --> SQLite (aiosqlite, WAL mode)
 Instrumented Code -- HTTP POST :3282 --> FastAPI Collector --+
 ```
 
-Both servers are launched concurrently via `asyncio.gather` in a single process. They share a single `aiosqlite` connection to `~/.hypothex/hypothex.db`.
+Both servers are launched concurrently via `asyncio.gather` in a single process. They use two separate `aiosqlite` connections to `~/.hypothex/hypothex.db` — one for writes (collector) and one for reads (MCP). WAL mode enables safe concurrent access across connections.
+
+A shared `asyncio.Event` (`shutdown_event`) coordinates graceful shutdown: when either server exits (e.g., MCP stdin closes or uvicorn stops), the event is set, triggering cancellation of the other server. On Windows, shutdown is handled via `KeyboardInterrupt` (SIGTERM does not exist on Windows; `loop.add_signal_handler` is Unix-only).
 
 ### Transport
 
@@ -57,7 +59,7 @@ hypothex/
 - **`main.py`** (~20 lines) — Initializes DB, creates `~/.hypothex/` directory, starts both servers via `asyncio.gather`, handles graceful shutdown.
 - **`db.py`** — Schema creation, insert function, all query functions. The only module that touches SQLite directly.
 - **`models.py`** — `LogEntry` pydantic model shared between collector (validation) and MCP (serialization).
-- **`collector.py`** — FastAPI app with a single `POST /log` route. Validates input via pydantic, calls `db.insert_log()`.
+- **`collector.py`** — FastAPI app with `POST /log` and `GET /health` routes. Validates input via pydantic, calls `db.insert_log()`. Enforces 1MB max payload size.
 - **`mcp_server.py`** — MCP tool definitions and handlers. Each tool calls into `db.*` query functions.
 
 ## Log Entry Shape
@@ -108,7 +110,7 @@ CREATE INDEX idx_session_timestamp ON logs(session_id, timestamp);
 - `created_at` is server-side receive time, used for ordering in `tail_logs`.
 - `timestamp` is what the instrumented code claims — not trusted for ordering.
 - WAL mode enabled at init for concurrent read/write support.
-- Single `aiosqlite` connection (sufficient for debugging workloads).
+- Two separate `aiosqlite` connections: one for writes (collector), one for reads (MCP). This avoids interleaved operations on a shared connection.
 
 ### Cleanup
 
@@ -118,8 +120,8 @@ Manual only via `clear_session` MCP tool. No auto-cleanup or TTL in v1.
 
 ### Writing Logs (Instrumented Code -> SQLite)
 
-1. Instrumented code fires `POST http://localhost:3282/log` with JSON body
-2. FastAPI validates against `LogEntry` pydantic model
+1. Instrumented code fires `POST http://localhost:3282/log` with JSON body (max 1MB)
+2. FastAPI validates against `LogEntry` pydantic model (rejects payloads over 1MB)
 3. Validation failure -> 422 response (caller ignores — fire-and-forget)
 4. Valid entry -> `db.insert_log()` writes to SQLite
 5. Return 201
@@ -135,11 +137,12 @@ Manual only via `clear_session` MCP tool. No auto-cleanup or TTL in v1.
 
 ### `get_logs(session_id, limit?, level?, since?)`
 
-- `limit` defaults to 50. `level` filters to a single level. `since` is ISO8601 — returns logs after that time.
+- `limit` defaults to 50. `level` filters to a single level. `since` is ISO8601 — returns logs with `created_at` after that time (server-side receive time, not client-provided timestamp).
 - Returns list of log entries, ordered by `id ASC` (insertion order).
 
-### `list_sessions()`
+### `list_sessions(limit?)`
 
+- `limit` defaults to 50. Returns the most recent sessions (by last activity).
 - Returns list of `{session_id, log_count, first_seen, last_seen}`.
 - Used by Claude to discover which session to query.
 
@@ -151,6 +154,7 @@ Manual only via `clear_session` MCP tool. No auto-cleanup or TTL in v1.
 ### `search_logs(session_id, query)`
 
 - `LIKE '%query%'` against `message` and `data` columns.
+- Note: search against `data` is a raw text match over serialized JSON. Results may include false positives from JSON key names or structural characters. This is acceptable for a debugging tool.
 - Returns matching entries, ordered by `id ASC`.
 - Capped at 100 results.
 
@@ -179,7 +183,7 @@ Manual only via `clear_session` MCP tool. No auto-cleanup or TTL in v1.
 
 - Port 3282 already in use -> log to stderr, exit with error
 - SQLite DB can't be created/opened -> log to stderr, exit with error
-- Graceful shutdown on SIGINT/SIGTERM — close DB connections, stop uvicorn
+- Graceful shutdown via shared `asyncio.Event` — when either server exits, the other is cancelled. On Windows, shutdown is triggered by `KeyboardInterrupt` (not SIGTERM). Close DB connections, stop uvicorn.
 
 ## How Claude Code Uses Hypothex
 
@@ -198,7 +202,14 @@ httpx.post(f"http://localhost:{os.environ.get('HYPOTHEX_PORT', '3282')}/log", js
 })
 ```
 
+Note: The snippet should use whatever HTTP library the project already has (e.g., `requests`, `httpx`, `urllib.request`). The example above uses `httpx` but is not prescriptive.
+
 Snippet patterns for each language are documented in a skill file, not generated by an MCP tool.
+
+### MCP Server Metadata
+
+- **Server name:** `hypothex`
+- **Version:** `0.1.0`
 
 ## Testing Strategy
 
