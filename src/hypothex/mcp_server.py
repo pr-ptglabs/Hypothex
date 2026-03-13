@@ -31,14 +31,17 @@ class HypothexMCP(FastMCP):
 def create_mcp_server(db: Database) -> HypothexMCP:
     mcp = HypothexMCP(name="hypothex")
 
-    @mcp.tool(description="Get logs for a session, optionally filtered by level and time")
+    @mcp.tool(description="Get logs for a session, optionally filtered by level, time, or hypothesis")
     async def get_logs(
         session_id: Annotated[str, "Session ID to query"],
         limit: Annotated[int, "Max number of logs to return"] = 50,
         level: Annotated[str | None, "Filter by log level (debug/info/warn/error)"] = None,
         since: Annotated[str | None, "ISO8601 timestamp — return logs received after this time"] = None,
+        hypothesis_id: Annotated[str | None, "Filter to logs linked to this hypothesis"] = None,
     ) -> str:
-        logs = await db.get_logs(session_id, limit=limit, level=level, since=since)
+        logs = await db.get_logs(
+            session_id, limit=limit, level=level, since=since, hypothesis_id=hypothesis_id
+        )
         return json.dumps(logs, indent=2)
 
     @mcp.tool(description="List all debugging sessions with log counts")
@@ -48,20 +51,22 @@ def create_mcp_server(db: Database) -> HypothexMCP:
         sessions = await db.list_sessions(limit=limit)
         return json.dumps(sessions, indent=2)
 
-    @mcp.tool(description="Get the most recent N logs for a session")
+    @mcp.tool(description="Get the most recent N logs for a session, optionally filtered by hypothesis")
     async def tail_logs(
         session_id: Annotated[str, "Session ID to query"],
         n: Annotated[int, "Number of recent logs to return"] = 20,
+        hypothesis_id: Annotated[str | None, "Filter to logs linked to this hypothesis"] = None,
     ) -> str:
-        logs = await db.tail_logs(session_id, n=n)
+        logs = await db.tail_logs(session_id, n=n, hypothesis_id=hypothesis_id)
         return json.dumps(logs, indent=2)
 
-    @mcp.tool(description="Search logs by text query across message and data fields")
+    @mcp.tool(description="Search logs by text query across message and data fields, optionally filtered by hypothesis")
     async def search_logs(
         session_id: Annotated[str, "Session ID to query"],
         query: Annotated[str, "Text to search for in message and data fields"],
+        hypothesis_id: Annotated[str | None, "Filter to logs linked to this hypothesis"] = None,
     ) -> str:
-        logs = await db.search_logs(session_id, query)
+        logs = await db.search_logs(session_id, query, hypothesis_id=hypothesis_id)
         return json.dumps(logs, indent=2)
 
     @mcp.tool(description="Delete all logs for a session")

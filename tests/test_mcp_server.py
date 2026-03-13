@@ -141,3 +141,53 @@ async def test_get_hypothesis_logs_tool(db: Database, mcp):
     data = json.loads(result.content[0].text)
     assert len(data) == 1
     assert data[0]["message"] == "linked"
+
+
+async def _setup_hypothesis_logs(db: Database):
+    """Helper: creates a hypothesis and links some logs to it."""
+    await db.create_hypothesis("s1", "Test hypothesis")
+    id1 = await db.insert_log(session_id="s1", timestamp="t1", level="debug", message="linked")
+    await db.link_log_hypotheses(id1, ["s1:h1"])
+    await db.insert_log(session_id="s1", timestamp="t2", level="info", message="unlinked")
+
+
+@pytest.mark.asyncio
+async def test_get_logs_with_hypothesis_filter(db: Database, mcp):
+    await _setup_hypothesis_logs(db)
+    result = await mcp.call_tool(
+        "get_logs", {"session_id": "s1", "hypothesis_id": "s1:h1"}
+    )
+    import json
+    data = json.loads(result.content[0].text)
+    assert len(data) == 1
+    assert data[0]["message"] == "linked"
+
+
+@pytest.mark.asyncio
+async def test_tail_logs_with_hypothesis_filter(db: Database, mcp):
+    await db.create_hypothesis("s1", "Test")
+    for i in range(10):
+        log_id = await db.insert_log(
+            session_id="s1", timestamp=f"t{i}", level="info", message=f"msg-{i}"
+        )
+        if i >= 5:
+            await db.link_log_hypotheses(log_id, ["s1:h1"])
+    result = await mcp.call_tool(
+        "tail_logs", {"session_id": "s1", "n": 3, "hypothesis_id": "s1:h1"}
+    )
+    import json
+    data = json.loads(result.content[0].text)
+    assert len(data) == 3
+    assert data[0]["message"] == "msg-7"
+
+
+@pytest.mark.asyncio
+async def test_search_logs_with_hypothesis_filter(db: Database, mcp):
+    await _setup_hypothesis_logs(db)
+    result = await mcp.call_tool(
+        "search_logs", {"session_id": "s1", "query": "linked", "hypothesis_id": "s1:h1"}
+    )
+    import json
+    data = json.loads(result.content[0].text)
+    assert len(data) == 1
+    assert data[0]["message"] == "linked"
