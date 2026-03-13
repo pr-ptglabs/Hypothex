@@ -302,3 +302,44 @@ async def test_get_hypothesis_logs(db: Database):
     logs = await db.get_hypothesis_logs("s1:h1")
     assert len(logs) == 1
     assert logs[0]["message"] == "linked log"
+
+
+@pytest.mark.asyncio
+async def test_get_logs_filter_by_hypothesis(db: Database):
+    await db.create_hypothesis("s1", "Hyp A")
+    id1 = await db.insert_log(session_id="s1", timestamp="t1", level="debug", message="linked")
+    await db.link_log_hypotheses(id1, ["s1:h1"])
+    await db.insert_log(session_id="s1", timestamp="t2", level="info", message="unlinked")
+    logs = await db.get_logs("s1", hypothesis_id="s1:h1")
+    assert len(logs) == 1
+    assert logs[0]["message"] == "linked"
+
+
+@pytest.mark.asyncio
+async def test_tail_logs_filter_by_hypothesis(db: Database):
+    await db.create_hypothesis("s1", "Hyp A")
+    for i in range(10):
+        log_id = await db.insert_log(
+            session_id="s1", timestamp=f"t{i}", level="info", message=f"msg-{i}"
+        )
+        if i >= 5:
+            await db.link_log_hypotheses(log_id, ["s1:h1"])
+    logs = await db.tail_logs("s1", n=3, hypothesis_id="s1:h1")
+    assert len(logs) == 3
+    assert logs[0]["message"] == "msg-7"
+    assert logs[2]["message"] == "msg-9"
+
+
+@pytest.mark.asyncio
+async def test_search_logs_filter_by_hypothesis(db: Database):
+    await db.create_hypothesis("s1", "Hyp A")
+    id1 = await db.insert_log(
+        session_id="s1", timestamp="t1", level="debug", message="hello world"
+    )
+    await db.link_log_hypotheses(id1, ["s1:h1"])
+    await db.insert_log(
+        session_id="s1", timestamp="t2", level="info", message="hello again"
+    )
+    logs = await db.search_logs("s1", "hello", hypothesis_id="s1:h1")
+    assert len(logs) == 1
+    assert logs[0]["message"] == "hello world"

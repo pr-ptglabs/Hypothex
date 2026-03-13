@@ -98,18 +98,26 @@ class Database:
         limit: int = 50,
         level: str | None = None,
         since: str | None = None,
+        hypothesis_id: str | None = None,
     ) -> list[dict]:
         if self._read_conn is None:
             raise RuntimeError("Database not connected")
-        query = "SELECT * FROM logs WHERE session_id = ?"
-        params: list = [session_id]
+        if hypothesis_id:
+            query = """\
+                SELECT l.* FROM logs l
+                JOIN log_hypotheses lh ON l.id = lh.log_id
+                WHERE l.session_id = ? AND lh.hypothesis_id = ?"""
+            params: list = [session_id, hypothesis_id]
+        else:
+            query = "SELECT * FROM logs WHERE session_id = ?"
+            params = [session_id]
         if level:
-            query += " AND level = ?"
+            query += " AND l.level = ?" if hypothesis_id else " AND level = ?"
             params.append(level)
         if since:
-            query += " AND created_at > ?"
+            query += " AND l.created_at > ?" if hypothesis_id else " AND created_at > ?"
             params.append(since)
-        query += " ORDER BY id ASC LIMIT ?"
+        query += " ORDER BY l.id ASC LIMIT ?" if hypothesis_id else " ORDER BY id ASC LIMIT ?"
         params.append(limit)
         async with self._read_conn.execute(query, params) as cursor:
             rows = await cursor.fetchall()
@@ -133,37 +141,64 @@ class Database:
             rows = await cursor.fetchall()
             return [dict(row) for row in rows]
 
-    async def tail_logs(self, session_id: str, *, n: int = 20) -> list[dict]:
+    async def tail_logs(
+        self, session_id: str, *, n: int = 20, hypothesis_id: str | None = None
+    ) -> list[dict]:
         if self._read_conn is None:
             raise RuntimeError("Database not connected")
-        async with self._read_conn.execute(
-            """\
-            SELECT * FROM (
-                SELECT * FROM logs
-                WHERE session_id = ?
-                ORDER BY id DESC
-                LIMIT ?
-            ) sub ORDER BY id ASC""",
-            (session_id, n),
-        ) as cursor:
+        if hypothesis_id:
+            query = """\
+                SELECT * FROM (
+                    SELECT l.* FROM logs l
+                    JOIN log_hypotheses lh ON l.id = lh.log_id
+                    WHERE l.session_id = ? AND lh.hypothesis_id = ?
+                    ORDER BY l.id DESC
+                    LIMIT ?
+                ) sub ORDER BY id ASC"""
+            params = (session_id, hypothesis_id, n)
+        else:
+            query = """\
+                SELECT * FROM (
+                    SELECT * FROM logs
+                    WHERE session_id = ?
+                    ORDER BY id DESC
+                    LIMIT ?
+                ) sub ORDER BY id ASC"""
+            params = (session_id, n)
+        async with self._read_conn.execute(query, params) as cursor:
             rows = await cursor.fetchall()
             return [dict(row) for row in rows]
 
     async def search_logs(
-        self, session_id: str, query: str, *, limit: int = 100
+        self,
+        session_id: str,
+        query: str,
+        *,
+        limit: int = 100,
+        hypothesis_id: str | None = None,
     ) -> list[dict]:
         if self._read_conn is None:
             raise RuntimeError("Database not connected")
         pattern = f"%{query}%"
-        async with self._read_conn.execute(
-            """\
-            SELECT * FROM logs
-            WHERE session_id = ?
-              AND (message LIKE ? OR data LIKE ?)
-            ORDER BY id ASC
-            LIMIT ?""",
-            (session_id, pattern, pattern, limit),
-        ) as cursor:
+        if hypothesis_id:
+            sql = """\
+                SELECT l.* FROM logs l
+                JOIN log_hypotheses lh ON l.id = lh.log_id
+                WHERE l.session_id = ?
+                  AND lh.hypothesis_id = ?
+                  AND (l.message LIKE ? OR l.data LIKE ?)
+                ORDER BY l.id ASC
+                LIMIT ?"""
+            params = (session_id, hypothesis_id, pattern, pattern, limit)
+        else:
+            sql = """\
+                SELECT * FROM logs
+                WHERE session_id = ?
+                  AND (message LIKE ? OR data LIKE ?)
+                ORDER BY id ASC
+                LIMIT ?"""
+            params = (session_id, pattern, pattern, limit)
+        async with self._read_conn.execute(sql, params) as cursor:
             rows = await cursor.fetchall()
             return [dict(row) for row in rows]
 
