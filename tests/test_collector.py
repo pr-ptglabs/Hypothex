@@ -117,3 +117,55 @@ def test_post_log_payload_too_large(client: TestClient):
         },
     )
     assert resp.status_code == 413
+
+
+@pytest.mark.asyncio
+async def test_post_log_with_hypothesis_ids(db: Database):
+    # Pre-create hypothesis
+    await db.create_hypothesis("s1", "Test hypothesis")
+    app = create_app(db)
+    client = TestClient(app)
+    resp = client.post(
+        "/log",
+        json={
+            "session_id": "s1",
+            "level": "debug",
+            "message": "linked log",
+            "hypothesis_ids": ["s1:h1"],
+        },
+    )
+    assert resp.status_code == 201
+    logs = await db.get_hypothesis_logs("s1:h1")
+    assert len(logs) == 1
+    assert logs[0]["message"] == "linked log"
+
+
+@pytest.mark.asyncio
+async def test_post_log_with_invalid_hypothesis_ids(db: Database):
+    app = create_app(db)
+    client = TestClient(app)
+    resp = client.post(
+        "/log",
+        json={
+            "session_id": "s1",
+            "level": "debug",
+            "message": "test",
+            "hypothesis_ids": ["s1:h999"],
+        },
+    )
+    # Should still succeed (fire-and-forget), just skip linking
+    assert resp.status_code == 201
+    logs = await db.get_logs("s1")
+    assert len(logs) == 1
+
+
+def test_post_log_without_hypothesis_ids(client: TestClient):
+    resp = client.post(
+        "/log",
+        json={
+            "session_id": "s1",
+            "level": "info",
+            "message": "no hypothesis",
+        },
+    )
+    assert resp.status_code == 201

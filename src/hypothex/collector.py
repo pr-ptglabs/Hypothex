@@ -35,7 +35,7 @@ def create_app(db: Database) -> FastAPI:
                 status_code=422,
             )
         try:
-            await db.insert_log(
+            log_id = await db.insert_log(
                 session_id=entry.session_id,
                 timestamp=entry.timestamp,
                 level=entry.level,
@@ -45,6 +45,8 @@ def create_app(db: Database) -> FastAPI:
                 function=entry.function,
                 line=entry.line,
             )
+            if entry.hypothesis_ids:
+                await db.link_log_hypotheses(log_id, entry.hypothesis_ids)
         except Exception as exc:
             print(f"[hypothex] DB write error: {exc}", file=sys.stderr)
             return JSONResponse(
