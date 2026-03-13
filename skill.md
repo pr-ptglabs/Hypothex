@@ -199,3 +199,11 @@ After running instrumented code, use these MCP tools:
 4. **Always clean up** — Remove all instrumentation code after debugging. Use `clear_session` to clean the DB.
 5. **One hypothesis at a time** — Instrument to test one specific theory, analyze, then adjust.
 6. **Check health first** — If logs aren't appearing, hit `http://localhost:3282/health` to verify the server is running.
+
+## Debug Mode
+
+For structured hypothesis-driven debugging, see [debug-skill.md](debug-skill.md). Debug Mode adds:
+
+- **Hypothesis tracking** — create and manage hypotheses about bug root causes
+- **Log-hypothesis linking** — correlate runtime logs with the hypothesis they test
+- **Structured workflow** — observe → hypothesize → instrument → reproduce → analyze → fix → cleanup
