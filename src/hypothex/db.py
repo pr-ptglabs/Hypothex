@@ -313,5 +313,10 @@ class Database:
             "DELETE FROM logs WHERE session_id = ?",
             (session_id,),
         )
+        count = cursor.rowcount
+        await self._write_conn.execute(
+            "DELETE FROM hypotheses WHERE session_id = ?",
+            (session_id,),
+        )
         await self._write_conn.commit()
-        return cursor.rowcount
+        return count

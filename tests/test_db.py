@@ -343,3 +343,28 @@ async def test_search_logs_filter_by_hypothesis(db: Database):
     logs = await db.search_logs("s1", "hello", hypothesis_id="s1:h1")
     assert len(logs) == 1
     assert logs[0]["message"] == "hello world"
+
+
+@pytest.mark.asyncio
+async def test_clear_session_deletes_hypotheses_and_links(db: Database):
+    await db.create_hypothesis("s1", "Hyp A")
+    log_id = await db.insert_log(
+        session_id="s1", timestamp="t1", level="debug", message="linked"
+    )
+    await db.link_log_hypotheses(log_id, ["s1:h1"])
+    # Also add data for s2 to ensure it's not affected
+    await db.create_hypothesis("s2", "Hyp B")
+    count = await db.clear_session("s1")
+    assert count == 1
+    # Hypotheses for s1 should be gone
+    hyps = await db.list_hypotheses("s1")
+    assert hyps == []
+    # log_hypotheses should be empty for s1 (cascade)
+    async with db._read_conn.execute(
+        "SELECT * FROM log_hypotheses WHERE hypothesis_id = 's1:h1'"
+    ) as cursor:
+        rows = await cursor.fetchall()
+    assert len(rows) == 0
+    # s2 data untouched
+    hyps_s2 = await db.list_hypotheses("s2")
+    assert len(hyps_s2) == 1
