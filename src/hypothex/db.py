@@ -79,16 +79,17 @@ class Database:
         file: str | None = None,
         function: str | None = None,
         line: int | None = None,
-    ) -> None:
+    ) -> int:
         if self._write_conn is None:
             raise RuntimeError("Database not connected")
-        await self._write_conn.execute(
+        cursor = await self._write_conn.execute(
             """\
             INSERT INTO logs (session_id, timestamp, level, message, data, file, function, line)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             (session_id, timestamp, level, message, data, file, function, line),
         )
         await self._write_conn.commit()
+        return cursor.lastrowid
 
     async def get_logs(
         self,
@@ -240,6 +241,35 @@ class Database:
                 "status": row[3],
                 "created_at": row[4],
             }
+
+    async def link_log_hypotheses(self, log_id: int, hypothesis_ids: list[str]) -> None:
+        if self._write_conn is None:
+            raise RuntimeError("Database not connected")
+        for hyp_id in hypothesis_ids:
+            try:
+                await self._write_conn.execute(
+                    """\
+                    INSERT INTO log_hypotheses (log_id, hypothesis_id)
+                    SELECT ?, ? WHERE EXISTS (SELECT 1 FROM hypotheses WHERE id = ?)""",
+                    (log_id, hyp_id, hyp_id),
+                )
+            except Exception:
+                pass  # fire-and-forget: skip invalid IDs
+        await self._write_conn.commit()
+
+    async def get_hypothesis_logs(self, hypothesis_id: str) -> list[dict]:
+        if self._read_conn is None:
+            raise RuntimeError("Database not connected")
+        async with self._read_conn.execute(
+            """\
+            SELECT l.* FROM logs l
+            JOIN log_hypotheses lh ON l.id = lh.log_id
+            WHERE lh.hypothesis_id = ?
+            ORDER BY l.id ASC""",
+            (hypothesis_id,),
+        ) as cursor:
+            rows = await cursor.fetchall()
+            return [dict(row) for row in rows]
 
     async def clear_session(self, session_id: str) -> int:
         if self._write_conn is None:

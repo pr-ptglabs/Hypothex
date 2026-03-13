@@ -243,3 +243,62 @@ async def test_update_hypothesis_invalid_status(db: Database):
 async def test_update_hypothesis_nonexistent(db: Database):
     with pytest.raises(ValueError, match="not found"):
         await db.update_hypothesis("s1:h999", "confirmed")
+
+
+@pytest.mark.asyncio
+async def test_insert_log_returns_id(db: Database):
+    log_id = await db.insert_log(
+        session_id="s1", timestamp="t1", level="info", message="test"
+    )
+    assert isinstance(log_id, int)
+    assert log_id > 0
+
+
+@pytest.mark.asyncio
+async def test_link_log_hypotheses(db: Database):
+    await db.create_hypothesis("s1", "Hypothesis A")
+    await db.create_hypothesis("s1", "Hypothesis B")
+    log_id = await db.insert_log(
+        session_id="s1", timestamp="t1", level="debug", message="test"
+    )
+    await db.link_log_hypotheses(log_id, ["s1:h1", "s1:h2"])
+    # Verify via raw query
+    async with db._read_conn.execute(
+        "SELECT hypothesis_id FROM log_hypotheses WHERE log_id = ? ORDER BY hypothesis_id",
+        (log_id,),
+    ) as cursor:
+        rows = await cursor.fetchall()
+    assert len(rows) == 2
+    assert rows[0]["hypothesis_id"] == "s1:h1"
+    assert rows[1]["hypothesis_id"] == "s1:h2"
+
+
+@pytest.mark.asyncio
+async def test_link_log_hypotheses_skips_invalid(db: Database):
+    await db.create_hypothesis("s1", "Valid hypothesis")
+    log_id = await db.insert_log(
+        session_id="s1", timestamp="t1", level="debug", message="test"
+    )
+    await db.link_log_hypotheses(log_id, ["s1:h1", "s1:h999"])
+    async with db._read_conn.execute(
+        "SELECT hypothesis_id FROM log_hypotheses WHERE log_id = ?",
+        (log_id,),
+    ) as cursor:
+        rows = await cursor.fetchall()
+    # Only the valid one should be linked
+    assert len(rows) == 1
+    assert rows[0]["hypothesis_id"] == "s1:h1"
+
+
+@pytest.mark.asyncio
+async def test_get_hypothesis_logs(db: Database):
+    await db.create_hypothesis("s1", "Test hyp")
+    log_id = await db.insert_log(
+        session_id="s1", timestamp="t1", level="debug", message="linked log"
+    )
+    await db.link_log_hypotheses(log_id, ["s1:h1"])
+    # Also insert a log NOT linked to the hypothesis
+    await db.insert_log(session_id="s1", timestamp="t2", level="info", message="unlinked")
+    logs = await db.get_hypothesis_logs("s1:h1")
+    assert len(logs) == 1
+    assert logs[0]["message"] == "linked log"
