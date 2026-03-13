@@ -22,7 +22,7 @@ hypothesis_ids: list[str] | None = None
 
 ```sql
 CREATE TABLE hypotheses (
-    id TEXT PRIMARY KEY,           -- e.g. "h1", "h2", auto-assigned per session
+    id TEXT PRIMARY KEY,           -- globally unique: "{session_id}:h{n}"
     session_id TEXT NOT NULL,
     description TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending',  -- pending | confirmed | rejected
@@ -31,12 +31,14 @@ CREATE TABLE hypotheses (
 CREATE INDEX idx_hypotheses_session ON hypotheses(session_id);
 ```
 
+ID format: `{session_id}:h{n}` where `n` is derived from `MAX` of existing hypothesis numbers for that session (not `COUNT`, to avoid collisions if hypotheses are ever deleted). Example: `debug-abc:h1`, `debug-abc:h2`.
+
 ### New `log_hypotheses` join table
 
 ```sql
 CREATE TABLE log_hypotheses (
-    log_id INTEGER NOT NULL REFERENCES logs(id),
-    hypothesis_id TEXT NOT NULL REFERENCES hypotheses(id),
+    log_id INTEGER NOT NULL REFERENCES logs(id) ON DELETE CASCADE,
+    hypothesis_id TEXT NOT NULL REFERENCES hypotheses(id) ON DELETE CASCADE,
     PRIMARY KEY (log_id, hypothesis_id)
 );
 CREATE INDEX idx_log_hyp_hypothesis ON log_hypotheses(hypothesis_id);
@@ -45,13 +47,15 @@ CREATE INDEX idx_log_hyp_hypothesis ON log_hypotheses(hypothesis_id);
 ### Insertion flow
 
 When the collector receives a log with `hypothesis_ids`:
-1. Insert the log row into `logs` (without hypothesis data)
-2. For each ID in `hypothesis_ids`, insert a row into `log_hypotheses`
+1. Insert the log row into `logs` (without hypothesis data), capture `lastrowid`
+2. For each ID in `hypothesis_ids`, insert a row into `log_hypotheses` — silently skip any `hypothesis_id` that doesn't exist in `hypotheses` (fire-and-forget principle)
+
+**Note:** `db.insert_log()` must be updated to return the inserted row's ID (`lastrowid`).
 
 ## New MCP Tools
 
 ### `create_hypothesis(session_id, description)`
-- Auto-assigns ID as `h{n}` scoped to the session (counts existing hypotheses + 1)
+- Auto-assigns globally unique ID as `{session_id}:h{n}` (uses MAX of existing numbers + 1)
 - Returns `{id, session_id, description, status: "pending"}`
 
 ### `list_hypotheses(session_id)`
@@ -64,6 +68,7 @@ When the collector receives a log with `hypothesis_ids`:
 
 ### `get_hypothesis_logs(hypothesis_id)`
 - Returns all logs linked to a hypothesis via the join table
+- `hypothesis_id` is globally unique so `session_id` is not needed
 - Same return format as `get_logs`
 
 ## Existing Tool Changes
@@ -76,19 +81,23 @@ Three existing tools gain an optional `hypothesis_id` parameter:
 
 When `hypothesis_id` is provided, these tools JOIN through `log_hypotheses`. When omitted, behavior is unchanged.
 
-`list_sessions` and `clear_session` remain unchanged.
+`list_sessions` remains unchanged.
+
+`clear_session` is updated to also delete from `log_hypotheses` (via CASCADE on `logs.id` FK) and `hypotheses` for the session. Deletion order: delete from `logs` (cascades to `log_hypotheses`), then delete from `hypotheses`.
+
+**Required:** `PRAGMA foreign_keys = ON` must be set on both DB connections in `db.connect()` (alongside the existing WAL pragma) for CASCADE deletes to work.
 
 ## Instrumentation Format
 
 Injected logging is wrapped with comment markers for reliable cleanup:
 
 ```python
-# hypothex:start h1 h3
+# hypothex:start debug-abc:h1 debug-abc:h3
 try:
     import httpx, os
     httpx.post(f"http://localhost:{os.environ.get('HYPOTHEX_PORT', '3282')}/log", json={
         "session_id": os.environ.get("HYPOTHEX_SESSION_ID", "default"),
-        "hypothesis_ids": ["h1", "h3"],
+        "hypothesis_ids": ["debug-abc:h1", "debug-abc:h3"],
         "level": "debug",
         "message": "cache state after profile update",
         "data": {"cache_keys": list(cache.keys()), "user_id": user.id},
@@ -96,10 +105,10 @@ try:
     })
 except Exception:
     pass
-# hypothex:end h1 h3
+# hypothex:end debug-abc:h1 debug-abc:h3
 ```
 
-**Marker format:** `# hypothex:start <ids...>` / `# hypothex:end <ids...>`
+**Marker format:** `# hypothex:start <full-ids...>` / `# hypothex:end <full-ids...>` (always use full globally unique IDs)
 
 Language-specific comment syntax applies (`//` for JS/TS/Go, `#` for Python/Ruby/Shell).
 
@@ -142,7 +151,7 @@ The hypothesis IDs in the markers enable targeted cleanup — the agent can remo
 | File | Change |
 |------|--------|
 | `src/hypothex/models.py` | Add `hypothesis_ids` field to LogEntry |
-| `src/hypothex/db.py` | Add `hypotheses` + `log_hypotheses` tables, hypothesis CRUD functions, update insert/query functions for join |
+| `src/hypothex/db.py` | Add `hypotheses` + `log_hypotheses` tables, hypothesis CRUD functions, update insert/query functions for join, `insert_log` returns `int` (lastrowid), enable `PRAGMA foreign_keys = ON` in `connect()` |
 | `src/hypothex/collector.py` | Handle `hypothesis_ids` on log insertion |
 | `src/hypothex/mcp_server.py` | Add 4 new tools, update 3 existing tools with `hypothesis_id` filter |
 | `debug-skill.md` | New file: debug loop workflow guide |
