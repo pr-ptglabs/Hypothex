@@ -16,6 +16,7 @@ class LogEntry(BaseModel):
     file: str | None = None
     function: str | None = None
     line: int | None = None
+    hypothesis_ids: list[str] | None = None
 
     @field_validator("timestamp", mode="before")
     @classmethod

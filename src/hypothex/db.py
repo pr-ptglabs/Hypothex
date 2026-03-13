@@ -18,6 +18,20 @@ CREATE TABLE IF NOT EXISTS logs (
 CREATE INDEX IF NOT EXISTS idx_session_id ON logs(session_id);
 CREATE INDEX IF NOT EXISTS idx_session_level ON logs(session_id, level);
 CREATE INDEX IF NOT EXISTS idx_session_timestamp ON logs(session_id, timestamp);
+CREATE TABLE IF NOT EXISTS hypotheses (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    description TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_hypotheses_session ON hypotheses(session_id);
+CREATE TABLE IF NOT EXISTS log_hypotheses (
+    log_id INTEGER NOT NULL REFERENCES logs(id) ON DELETE CASCADE,
+    hypothesis_id TEXT NOT NULL REFERENCES hypotheses(id) ON DELETE CASCADE,
+    PRIMARY KEY (log_id, hypothesis_id)
+);
+CREATE INDEX IF NOT EXISTS idx_log_hyp_hypothesis ON log_hypotheses(hypothesis_id);
 """
 
 
@@ -39,6 +53,8 @@ class Database:
         self._write_conn = await aiosqlite.connect(connect_path, **kwargs)
         self._read_conn = await aiosqlite.connect(connect_path, **kwargs)
         await self._write_conn.execute("PRAGMA journal_mode=WAL")
+        await self._write_conn.execute("PRAGMA foreign_keys=ON")
+        await self._read_conn.execute("PRAGMA foreign_keys=ON")
         self._read_conn.row_factory = aiosqlite.Row
         for statement in _SCHEMA.strip().split(";"):
             stmt = statement.strip()

@@ -147,3 +147,28 @@ async def test_get_logs_limit(db: Database):
     assert len(logs) == 3
     assert logs[0]["message"] == "m0"
     assert logs[2]["message"] == "m2"
+
+
+@pytest.mark.asyncio
+async def test_hypotheses_table_exists(db: Database):
+    async with db._read_conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='hypotheses'"
+    ) as cursor:
+        row = await cursor.fetchone()
+    assert row is not None
+
+
+@pytest.mark.asyncio
+async def test_log_hypotheses_table_exists(db: Database):
+    async with db._read_conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='log_hypotheses'"
+    ) as cursor:
+        row = await cursor.fetchone()
+    assert row is not None
+
+
+@pytest.mark.asyncio
+async def test_foreign_keys_enabled(db: Database):
+    async with db._read_conn.execute("PRAGMA foreign_keys") as cursor:
+        row = await cursor.fetchone()
+    assert row[0] == 1
