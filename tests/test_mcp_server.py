@@ -90,3 +90,54 @@ async def test_get_logs_empty_session(db: Database, mcp):
     assert not result.isError
     text = result.content[0].text
     assert "[]" in text or "no logs" in text.lower() or text.strip() == "[]"
+
+
+@pytest.mark.asyncio
+async def test_create_hypothesis_tool(db: Database, mcp):
+    result = await mcp.call_tool(
+        "create_hypothesis", {"session_id": "s1", "description": "Cache is stale"}
+    )
+    assert not result.isError
+    import json
+    data = json.loads(result.content[0].text)
+    assert data["id"] == "s1:h1"
+    assert data["status"] == "pending"
+
+
+@pytest.mark.asyncio
+async def test_list_hypotheses_tool(db: Database, mcp):
+    await db.create_hypothesis("s1", "First")
+    await db.create_hypothesis("s1", "Second")
+    result = await mcp.call_tool("list_hypotheses", {"session_id": "s1"})
+    assert not result.isError
+    import json
+    data = json.loads(result.content[0].text)
+    assert len(data) == 2
+
+
+@pytest.mark.asyncio
+async def test_update_hypothesis_tool(db: Database, mcp):
+    await db.create_hypothesis("s1", "Test")
+    result = await mcp.call_tool(
+        "update_hypothesis", {"hypothesis_id": "s1:h1", "status": "confirmed"}
+    )
+    assert not result.isError
+    import json
+    data = json.loads(result.content[0].text)
+    assert data["status"] == "confirmed"
+
+
+@pytest.mark.asyncio
+async def test_get_hypothesis_logs_tool(db: Database, mcp):
+    await db.create_hypothesis("s1", "Test")
+    log_id = await db.insert_log(
+        session_id="s1", timestamp="t1", level="debug", message="linked"
+    )
+    await db.link_log_hypotheses(log_id, ["s1:h1"])
+    await db.insert_log(session_id="s1", timestamp="t2", level="info", message="unlinked")
+    result = await mcp.call_tool("get_hypothesis_logs", {"hypothesis_id": "s1:h1"})
+    assert not result.isError
+    import json
+    data = json.loads(result.content[0].text)
+    assert len(data) == 1
+    assert data[0]["message"] == "linked"

@@ -71,4 +71,34 @@ def create_mcp_server(db: Database) -> HypothexMCP:
         count = await db.clear_session(session_id)
         return json.dumps({"deleted": count})
 
+    @mcp.tool(description="Create a new debugging hypothesis for a session")
+    async def create_hypothesis(
+        session_id: Annotated[str, "Session ID to create hypothesis for"],
+        description: Annotated[str, "What you think the bug's root cause is"],
+    ) -> str:
+        hypothesis = await db.create_hypothesis(session_id, description)
+        return json.dumps(hypothesis, indent=2)
+
+    @mcp.tool(description="List all hypotheses for a debugging session with their status and log counts")
+    async def list_hypotheses(
+        session_id: Annotated[str, "Session ID to list hypotheses for"],
+    ) -> str:
+        hypotheses = await db.list_hypotheses(session_id)
+        return json.dumps(hypotheses, indent=2)
+
+    @mcp.tool(description="Update a hypothesis status to confirmed or rejected")
+    async def update_hypothesis(
+        hypothesis_id: Annotated[str, "Hypothesis ID (e.g. 'session:h1')"],
+        status: Annotated[str, "New status: 'confirmed' or 'rejected'"],
+    ) -> str:
+        hypothesis = await db.update_hypothesis(hypothesis_id, status)
+        return json.dumps(hypothesis, indent=2)
+
+    @mcp.tool(description="Get all logs linked to a specific hypothesis")
+    async def get_hypothesis_logs(
+        hypothesis_id: Annotated[str, "Hypothesis ID (e.g. 'session:h1')"],
+    ) -> str:
+        logs = await db.get_hypothesis_logs(hypothesis_id)
+        return json.dumps(logs, indent=2)
+
     return mcp
