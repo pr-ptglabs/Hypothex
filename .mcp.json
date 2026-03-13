@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "hypothex": {
+      "type": "stdio",
+      "command": "python",
+      "args": ["-m", "hypothex.main"],
+      "env": {
+        "PYTHONUNBUFFERED": "1"
+      }
+    }
+  }
+}
