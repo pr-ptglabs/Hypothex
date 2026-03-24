@@ -1,12 +1,9 @@
 {
-  "mcpServers": {
-    "hypothex": {
-      "type": "stdio",
-      "command": "python",
-      "args": ["-m", "hypothex.main"],
-      "env": {
-        "PYTHONUNBUFFERED": "1"
-      }
+  "hypothex": {
+    "command": "python",
+    "args": ["-m", "hypothex.main"],
+    "env": {
+      "PYTHONUNBUFFERED": "1"
     }
   }
 }

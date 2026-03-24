@@ -1,3 +1,8 @@
+---
+name: hypothex
+description: Use when you need to add runtime logging or observability to code, inspect runtime values, or trace execution flow. Provides instrumentation templates for Python, JavaScript, Go, Rust, Ruby, and shell.
+---
+
 # Hypothex: Runtime Debugging Skill
 
 You have access to the Hypothex MCP server — a runtime debugging system that lets you observe what code actually does at runtime.
@@ -202,7 +207,7 @@ After running instrumented code, use these MCP tools:
 
 ## Debug Mode
 
-For structured hypothesis-driven debugging, see [debug-skill.md](debug-skill.md). Debug Mode adds:
+For structured hypothesis-driven debugging, use the `hypothex-debug` skill. Debug Mode adds:
 
 - **Hypothesis tracking** — create and manage hypotheses about bug root causes
 - **Log-hypothesis linking** — correlate runtime logs with the hypothesis they test

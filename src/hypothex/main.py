@@ -50,7 +50,7 @@ async def _run() -> None:
 
     async def run_mcp() -> None:
         try:
-            await mcp.run_async(transport="stdio")
+            await mcp.run_stdio_async()
         finally:
             shutdown_event.set()
 

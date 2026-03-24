@@ -1,3 +1,8 @@
+---
+name: hypothex-debug
+description: Use when debugging any bug, test failure, or unexpected behavior where static analysis isn't enough. Provides a structured hypothesis-driven debugging workflow using runtime evidence.
+---
+
 # Hypothex: Debug Mode Skill
 
 You have access to the Hypothex debug mode — a structured debugging workflow that uses runtime evidence to find and fix bugs. Follow this workflow exactly.
