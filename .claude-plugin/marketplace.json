@@ -1,0 +1,17 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "hypothex",
+  "description": "Runtime debugging plugin for Claude Code with hypothesis-driven debugging workflow",
+  "owner": {
+    "name": "PTG Labs GmbH",
+    "email": "pr@ptg-labs.ch"
+  },
+  "plugins": [
+    {
+      "name": "hypothex",
+      "description": "Runtime debugging MCP server for Claude Code. Provides structured hypothesis-driven debugging with runtime log collection, querying, and analysis.",
+      "source": ".",
+      "category": "development"
+    }
+  ]
+}
