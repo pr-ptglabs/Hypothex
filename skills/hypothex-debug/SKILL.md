@@ -48,9 +48,9 @@ For each hypothesis (starting with most likely), inject logging at strategic poi
 ```python
 # hypothex:start {session}:h{n}
 try:
-    import httpx, os
-    httpx.post(f"http://localhost:{os.environ.get('HYPOTHEX_PORT', '3282')}/log", json={
-        "session_id": os.environ.get("HYPOTHEX_SESSION_ID", "default"),
+    import httpx
+    httpx.post("http://localhost:3282/log", json={
+        "session_id": "{session}",
         "hypothesis_ids": ["{session}:h{n}"],
         "level": "debug",
         "message": "describe what you're observing",
@@ -69,11 +69,11 @@ except Exception:
 ```javascript
 // hypothex:start {session}:h{n}
 try {
-    fetch(`http://localhost:${process.env.HYPOTHEX_PORT || '3282'}/log`, {
+    fetch('http://localhost:3282/log', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-            session_id: process.env.HYPOTHEX_SESSION_ID || 'default',
+            session_id: '{session}',
             hypothesis_ids: ['{session}:h{n}'],
             level: 'debug',
             message: 'describe what you are observing',
