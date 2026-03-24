@@ -10,7 +10,7 @@
     {
       "name": "hypothex",
       "description": "Runtime debugging MCP server for Claude Code. Provides structured hypothesis-driven debugging with runtime log collection, querying, and analysis.",
-      "source": ".",
+      "source": "./",
       "category": "development"
     }
   ]
