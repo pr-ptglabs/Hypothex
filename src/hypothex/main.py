@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import socket
 import sys
 from pathlib import Path
 
@@ -20,6 +21,16 @@ def _get_db_path() -> str:
     return str(db_dir / "hypothex.db")
 
 
+def _port_in_use(port: int) -> bool:
+    """Check if a port is already bound (another collector is running)."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        try:
+            s.bind(("127.0.0.1", port))
+            return False
+        except OSError:
+            return True
+
+
 async def _run() -> None:
     db_path = _get_db_path()
     port = int(os.environ.get("HYPOTHEX_PORT", str(DEFAULT_PORT)))
@@ -29,7 +40,35 @@ async def _run() -> None:
 
     shutdown_event = asyncio.Event()
 
-    # FastAPI collector
+    # MCP server
+    mcp = create_mcp_server(db)
+
+    async def run_mcp() -> None:
+        try:
+            await mcp.run_stdio_async()
+        finally:
+            shutdown_event.set()
+
+    collector_running = _port_in_use(port)
+
+    if collector_running:
+        # Another session already owns the HTTP collector on this port.
+        # Just run the MCP stdio server — logs still reach the shared DB.
+        print(
+            f"[hypothex] Collector already running on :{port}, "
+            "starting MCP server only.",
+            file=sys.stderr,
+        )
+        try:
+            await run_mcp()
+        except KeyboardInterrupt:
+            pass
+        finally:
+            await db.close()
+            print("[hypothex] Shutdown complete.", file=sys.stderr)
+        return
+
+    # First session — start both collector and MCP server.
     app = create_app(db)
     config = uvicorn.Config(
         app,
@@ -45,16 +84,6 @@ async def _run() -> None:
         finally:
             shutdown_event.set()
 
-    # MCP server
-    mcp = create_mcp_server(db)
-
-    async def run_mcp() -> None:
-        try:
-            await mcp.run_stdio_async()
-        finally:
-            shutdown_event.set()
-
-    # Shutdown watcher
     async def watch_shutdown() -> None:
         await shutdown_event.wait()
         server.should_exit = True

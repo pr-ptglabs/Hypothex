@@ -1,7 +1,7 @@
 {
   "hypothex": {
     "command": "python",
-    "args": ["-m", "hypothex.main"],
+    "args": ["${CLAUDE_PLUGIN_ROOT}/start.py"],
     "env": {
       "PYTHONUNBUFFERED": "1"
     }
