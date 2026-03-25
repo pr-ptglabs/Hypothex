@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
@@ -14,6 +15,13 @@ MAX_PAYLOAD_BYTES = 1024 * 1024  # 1MB
 
 def create_app(db: Database) -> FastAPI:
     app = FastAPI(title="Hypothex Collector")
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_methods=["POST", "GET"],
+        allow_headers=["*"],
+    )
 
     @app.get("/health")
     async def health() -> dict[str, str]:
