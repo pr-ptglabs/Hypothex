@@ -1,6 +1,6 @@
 {
   "name": "hypothex",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Runtime debugging MCP server for Claude Code. Provides structured hypothesis-driven debugging with runtime log collection, querying, and analysis.",
   "author": {
     "name": "Pascal"

@@ -81,6 +81,16 @@ async def _run() -> None:
     async def run_collector() -> None:
         try:
             await server.serve()
+        except (OSError, SystemExit) as exc:
+            # Port became unavailable between the check and bind (race),
+            # or uvicorn called sys.exit(1) on bind failure.
+            # Log and let the MCP server keep running.
+            print(
+                f"[hypothex] Collector failed to start on :{port} ({exc}), "
+                "continuing with MCP server only.",
+                file=sys.stderr,
+            )
+            return
         finally:
             shutdown_event.set()
 
